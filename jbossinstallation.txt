@@ -1,0 +1,307 @@
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+#install the java binary files
+#java setting
+sudo alternatives --config java
+alternatives --install /usr/bin/java java javapath
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+#useradd
+useradd -s /sbin/nologin username
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+#configuring master and slave concept with dc and hc1/hc2
+#edit in dc/host.xml
+<host xmlns="urn:jboss:domain:11.0" name="dc-hostname">
+
+#change ip in dc/host.xml
+<interfaces>
+        <interface name="management">
+            <inet-address value="${jboss.bind.address.management:dc-ip}"/>
+        </interface>
+        <interface name="public">
+            <inet-address value="${jboss.bind.address:dc-ip}"/>
+        </interface>
+    </interfaces>
+
+#execute dc/add-user.sh
+
+#copy secret value by executing add-user.sh
+
+#paste secret value in dc/host.xml
+<server-identities>
+<secret value="YXJ1biox" />
+</server-identities>
+
+#execute dc/domain.sh
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+allocate ip address
+
+
+
+to add multiple ip in instance
+
+step1:
+aws-->instance-->network interface-->manage ip address-->add private ip
+
+
+step2:  
+sudo touch /etc/sysconfig/network-scripts/ifcfg-eth0:1
+
+vim ifcfg-eth0:1
+    DEVICE=eth0:1
+    BOOTPROTO=static
+    NETMASK=255.255.255.0
+    ONBOOT=yes
+    TYPE=Ethernet
+    IPADDR=172.31.34.195
+	
+/etc/init.d/network  restart
+ 
+step3: test that private ip
+ping <private ip>
+ethtool <eth0:1>    eth0:1=>ethernet name
+ 
+ 
+refer this document: https://aws.amazon.com/premiumsupport/knowledge-center/second-eip-centos-rhel-single-eni-ec2/
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+#edit in hc1/host.xml
+<host xmlns="urn:jboss:domain:11.0" name="hc1-hostname">
+
+
+#change domain controller ip of master/dc in hc/host.xml
+<domain-controller>
+        <remote host="${jboss.domain.master.address:dc-ip}" port="${jboss.domain.master.port:1999}" security-realm="ManagementRealm"/>
+</domain-controller>
+
+
+#change ip in hc1/host.xml
+<interfaces>
+        <interface name="management">
+            <inet-address value="${jboss.bind.address.management:hc1/hc2-ip}"/>
+        </interface>
+        <interface name="public">
+            <inet-address value="${jboss.bind.address:hc1/hc2-ip}"/>
+        </interface>
+    </interfaces>
+	
+	
+#execute hc1/add-user.sh
+
+#copy secret value by executing add-user.sh
+
+#paste secret value in hc1/host.xml
+<server-identities>
+<secret value="YXJ1biox" />
+</server-identities>
+
+#execute hc1/domain.sh
+
+#after successfull execution of both domain.sh
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+#add jboss as a /etc/init.d/ -> service
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+#add a config file for jboss  dc and hc1 services  ----conf file   {change dc to hc} another configuratiobn for hc
+--> like below
+---------------------
+
+# General configuration for the init.d scripts,
+# not necessarily for JBoss AS itself.
+# The username who should own the process.
+#
+# JBOSS_USER=jboss-as
+# The amount of time to wait for startup
+#
+# STARTUP_WAIT=30
+# The amount of time to wait for shutdown
+#
+# SHUTDOWN_WAIT=30
+# Location to keep the console log
+JBOSS_HOME=/JbossEAP7.3/dc
+JBOSS_HOST_CONFIG=host.xml
+JBOSS_SCRIPT=domain.sh
+JBOSS_CONSOLE_LOG=/JbossEAP7.3/dc/domain/log/server.log
+JBOSS_PIDFILE=/JbossEAP7.3/dc/pid/jbossdc.pid
+JBOSS_USER=jboss
+#JBOSS_USER=root
+STARTUP_WAIT=20
+SHUTDOWN_WAIT=20
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+#add a /etc/init.d/jboss-name-dc and hc 
+--> like below
+------------------------
+#!/bin/sh
+#
+# JBoss domain control script
+#
+# chkconfig: 2345 87 27
+# description: Jboss hc Domain Controller
+# processname: jbosshc 
+# pidfile: /home/arun/JbossEAP7.3/hc/pid/jbosshc.pid
+# config: /etc/init.d/jboss-hc.conf
+# Source function library.
+. /etc/init.d/functions
+# Load Java configuration.
+#[ -r /etc/java/java.conf ] && . /etc/java/java.conf
+JAVA_HOME=/opt/JAVA/java64/jdk-11.0.9/
+# Load JBoss AS init.d configuration.
+if [ -z "$JBOSS_CONF" ]; then
+  JBOSS_CONF="/etc/init.d/jboss-dc.conf"
+fi
+[ -r "$JBOSS_CONF" ] && . "${JBOSS_CONF}"
+# Set defaults.
+if [ -z "$JBOSS_HOME" ]; then
+  JBOSS_HOME=/usr/share/jboss-as
+fi
+export JBOSS_HOME
+if [ -z "$JBOSS_PIDFILE" ]; then
+  JBOSS_PIDFILE=/var/run/jboss-as/jboss-as-domain.pid
+fi
+export JBOSS_PIDFILE
+if [ -z "$JBOSS_CONSOLE_LOG" ]; then
+  JBOSS_CONSOLE_LOG=/var/log/jboss-as/console.log
+fi
+if [ -z "$STARTUP_WAIT" ]; then
+  STARTUP_WAIT=30
+fi
+if [ -z "$SHUTDOWN_WAIT" ]; then
+  SHUTDOWN_WAIT=30
+fi
+if [ -z "$JBOSS_DOMAIN_CONFIG" ]; then
+  JBOSS_DOMAIN_CONFIG=domain.xml
+fi
+if [ -z "$JBOSS_HOST_CONFIG" ]; then
+  JBOSS_HOST_CONFIG=host.xml
+fi
+JBOSS_SCRIPT=$JBOSS_HOME/bin/domain.sh
+#prog='jboss-as'
+prog="jbosshc"
+CMD_PREFIX=''
+if [ ! -z "$JBOSS_USER" ]; then
+  if [ -x /etc/rc.d/init.d/functions ]; then
+    CMD_PREFIX="daemon --user $JBOSS_USER"
+  else
+    CMD_PREFIX="su - $JBOSS_USER -c"
+  fi
+fi
+start() {
+  echo -n "Starting $prog: "
+  if [ -f $JBOSS_PIDFILE ]; then
+    read ppid < $JBOSS_PIDFILE
+    if [ `ps --pid $ppid 2> /dev/null | grep -c $ppid 2> /dev/null` -eq '1' ]; then
+      echo -n "$prog is already running"
+      failure
+      echo
+      return 1
+    else
+      rm -f $JBOSS_PIDFILE
+    fi
+  fi
+  mkdir -p $(dirname $JBOSS_CONSOLE_LOG)
+  cat /dev/null > $JBOSS_CONSOLE_LOG
+  mkdir -p $(dirname $JBOSS_PIDFILE)
+  chown $JBOSS_USER $(dirname $JBOSS_PIDFILE) || true
+  #$CMD_PREFIX JBOSS_PIDFILE=$JBOSS_PIDFILE $JBOSS_SCRIPT 2>&1 > $JBOSS_CONSOLE_LOG &
+  #$CMD_PREFIX JBOSS_PIDFILE=$JBOSS_PIDFILE $JBOSS_SCRIPT &
+  if [ ! -z "$JBOSS_USER" ]; then
+    if [ -r /etc/rc.d/init.d/functions ]; then
+      daemon --user $JBOSS_USER LAUNCH_JBOSS_IN_BACKGROUND=1 JBOSS_PIDFILE=$JBOSS_PIDFILE $JBOSS_SCRIPT --domain-config=$JBOSS_DOMAIN_CONFIG --host-config=$JBOSS_HOST_CONFIG 2>&1 > $JBOSS_CONSOLE_LOG &
+    else
+      su - $JBOSS_USER -c "LAUNCH_JBOSS_IN_BACKGROUND=1 JBOSS_PIDFILE=$JBOSS_PIDFILE $JBOSS_SCRIPT --domain-config=$JBOSS_DOMAIN_CONFIG --host-config=$JBOSS_HOST_CONFIG" 2>&1 > $JBOSS_CONSOLE_LOG &
+    fi
+  fi
+  count=0
+  launched=false
+  until [ $count -gt $STARTUP_WAIT ]
+  do
+    grep 'JBoss AS.*started in' $JBOSS_CONSOLE_LOG > /dev/null
+    if [ $? -eq 0 ] ; then
+      launched=true
+      break
+    fi
+    sleep 1
+    let count=$count+1;
+  done
+  success
+  echo
+  return 0
+}
+stop() {
+  echo -n $"Stopping $prog: "
+  count=0;
+  if [ -f $JBOSS_PIDFILE ]; then
+    read kpid < $JBOSS_PIDFILE
+    let kwait=$SHUTDOWN_WAIT
+    # Try issuing SIGTERM
+    kill -15 $kpid
+    until [ `ps --pid $kpid 2> /dev/null | grep -c $kpid 2> /dev/null` -eq '0' ] || [ $count -gt $kwait ]
+    do
+      sleep 1
+      let count=$count+1;
+    done
+    if [ $count -gt $kwait ]; then
+      kill -9 $kpid
+    fi
+  fi
+  rm -f $JBOSS_PIDFILE
+  success
+  echo
+}
+status() {
+  if [ -f $JBOSS_PIDFILE ]; then
+    read ppid < $JBOSS_PIDFILE
+    if [ `ps --pid $ppid 2> /dev/null | grep -c $ppid 2> /dev/null` -eq '1' ]; then
+      echo "$prog is running (pid $ppid)"
+      return 0
+    else
+      echo "$prog dead but pid file exists"
+      return 1
+    fi
+  fi
+  echo "$prog is not running"
+  return 3
+}
+case "$1" in
+  start)
+      start
+      ;;
+  stop)
+      stop
+      ;;
+  restart)
+      $0 stop
+      $0 start
+      ;;
+  status)
+      status
+      ;;
+  *)
+      ## If no parameters are given, print which are avaiable.
+      echo "Usage: $0 {start|stop|status|restart|reload}"
+      exit 1
+      ;;
+esac
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+#start/stop/status the /etc/init.d/jboss-name-dc/hc
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ERROR:  dc
+
+ Starting jbossdc: /home/arun/JbossEAP7.3/dc/bin/domain.sh: line 301: java: command not found                  ----java path error [ solution: alternatives --install /usr/bin/java java /home/arun/jdk/bin/java 2]
+                                                                                                               ---- choose: sudo alternatives --config java   -------------choose the alternative java
+																											   
+ change vim jbossdc -------change the java path in that jbossdc
+ 
+ 
+ERROR: hc
+
+ Starting jbosshc: jbosshc is already running[FAILED]
+ jbosshc.service: control process exited, code=exited status
+ 
+[changes in conf file or service file] 
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
